@@ -46,3 +46,7 @@ include/
 # OS-specific
 Thumbs.db
 .Thumbs.db
+
+# Other
+Aufgabenpool/
+Live/
