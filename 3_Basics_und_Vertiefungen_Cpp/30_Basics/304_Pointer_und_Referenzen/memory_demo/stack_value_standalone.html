@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stack – lokale Variable (double x = 7.0)</title>
+<style>
+  :root{
+    --bg-primary:#ffffff;--bg-secondary:#f4f3ee;--bg-info:#e6f1fb;
+    --text-primary:#1f1e1c;--text-secondary:#5f5e5a;--text-tertiary:#8a8881;
+    --text-info:#185fa5;--text-success:#0f6e56;
+    --border-tertiary:rgba(0,0,0,0.14);--border-secondary:rgba(0,0,0,0.28);
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:ui-monospace,"Cascadia Code",Consolas,"Liberation Mono",monospace;
+    --r-md:8px;--r-lg:12px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg-primary:#262624;--bg-secondary:#30302d;--bg-info:#0c447c;
+      --text-primary:#f0efe9;--text-secondary:#b4b2a9;--text-tertiary:#888780;
+      --text-info:#85b7eb;--text-success:#5dcaa5;
+      --border-tertiary:rgba(255,255,255,0.16);--border-secondary:rgba(255,255,255,0.3);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0 auto;max-width:920px;padding:24px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-sans);line-height:1.6}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--text-secondary);font-size:14px;margin:0 0 20px}
+  button{font-family:inherit;font-size:14px;padding:6px 14px;cursor:pointer;background:var(--bg-primary);color:var(--text-primary);border:0.5px solid var(--border-secondary);border-radius:var(--r-md);transition:background .12s,transform .06s}
+  button:hover:not(:disabled){background:var(--bg-secondary)}
+  button:active:not(:disabled){transform:scale(0.98)}
+  button:disabled{opacity:0.4;cursor:default}
+  .sv-row{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:var(--r-md);font-family:var(--font-mono);font-size:13px;line-height:1.55}
+  .sv-num{width:18px;text-align:right;color:var(--text-tertiary);flex:none}
+  .sv-card{border-radius:var(--r-lg);padding:9px 13px;margin-bottom:9px}
+  .sv-meta{font-family:var(--font-mono);font-size:12px;line-height:1.6}
+</style>
+</head>
+<body>
+  <h1>Stack &ndash; lokale Variable</h1>
+  <p class="sub">double x = 7.0 lebt direkt im Stack-Frame und wird am Scope-Ende automatisch abger&auml;umt &ndash; der Heap bleibt unber&uuml;hrt.</p>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <button id="sv-back">&larr; Zur&uuml;ck</button>
+    <span id="sv-count" style="font-size:13px;color:var(--text-secondary);min-width:90px;text-align:center"></span>
+    <button id="sv-next">Weiter &rarr;</button>
+  </div>
+  <div id="sv-note" style="min-height:46px;font-size:14px;line-height:1.6;background:var(--bg-secondary);border-radius:var(--r-md);padding:10px 14px;margin-bottom:18px"></div>
+  <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+    <div style="flex:1 1 220px;min-width:0"><div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Programm</div><div id="sv-code"></div></div>
+    <div style="flex:1 1 170px;min-width:0"><div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Stack</div><div id="sv-stack"></div></div>
+    <div style="flex:1 1 150px;min-width:0"><div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Heap</div><div id="sv-heap"></div></div>
+  </div>
+<script>
+(function(){
+  var code=["void store() {","    double x = 7.0;","    useValue(x);","}"];
+  var steps=[
+    {line:1,note:"store() wird aufgerufen. Der Stack-Frame entsteht \u2013 x ist noch nicht angelegt.",x:"(noch nicht da)",ter:true,done:false,frame:true},
+    {line:2,note:"double x = 7.0: Die Variable liegt direkt im Stack-Frame. Kein new \u2013 der Heap bleibt unber\u00fchrt.",x:"7.0",ter:false,done:false,frame:true},
+    {line:3,note:"useValue(x) liest x = 7.0 direkt aus dem Frame.",x:"7.0",ter:false,done:false,frame:true},
+    {line:4,note:"Scope-Ende: Der Compiler r\u00e4umt den Frame (mit x) automatisch ab. Kein delete n\u00f6tig.",x:"7.0",ter:false,done:true,frame:true},
+    {line:0,note:"Frame weg, Stack und Heap leer. Stack-Variablen verschwinden automatisch mit ihrem Frame.",x:null,ter:false,done:false,frame:false}
+  ];
+  var i=0;
+  var elCode=document.getElementById("sv-code"),elStack=document.getElementById("sv-stack"),elHeap=document.getElementById("sv-heap"),elNote=document.getElementById("sv-note"),elCount=document.getElementById("sv-count"),elBack=document.getElementById("sv-back"),elNext=document.getElementById("sv-next");
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+  function render(){
+    var s=steps[i];
+    elNote.textContent=s.note;
+    elCount.textContent="Schritt "+(i+1)+" / "+steps.length;
+    elBack.disabled=(i===0);elNext.disabled=(i===steps.length-1);
+    var ch="";
+    for(var l=0;l<code.length;l++){
+      var cur=(l+1===s.line);
+      ch+='<div class="sv-row" style="'+(cur?"background:var(--bg-info);":"")+'"><span class="sv-num">'+(l+1)+'</span><span style="'+(cur?"color:var(--text-info);":"color:var(--text-primary);")+'white-space:pre">'+esc(code[l])+'</span></div>';
+    }
+    elCode.innerHTML=ch;
+    if(!s.frame){
+      elStack.innerHTML='<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);border:1px dashed var(--border-secondary);border-radius:var(--r-lg);padding:12px;text-align:center">Frame weg</div>';
+    }else{
+      var done=s.done?'<div class="sv-meta" style="color:var(--text-success)">\u2190 Frame wird automatisch abger\u00e4umt</div>':'';
+      elStack.innerHTML='<div class="sv-card" style="background:var(--bg-secondary);border:0.5px solid var(--border-tertiary)"><div style="font-family:var(--font-mono);font-size:13px;font-weight:600;margin-bottom:4px">store()</div><div class="sv-meta" style="color:var(--text-'+(s.ter?"tertiary":"secondary")+')">double x = '+esc(s.x)+'</div>'+done+'</div>';
+    }
+    elHeap.innerHTML='<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);border:1px dashed var(--border-secondary);border-radius:var(--r-lg);padding:12px;text-align:center">Heap leer</div>';
+  }
+  elBack.onclick=function(){if(i>0){i--;render();}};
+  elNext.onclick=function(){if(i<steps.length-1){i++;render();}};
+  document.addEventListener("keydown",function(e){if(e.key==="ArrowRight"){elNext.click();}if(e.key==="ArrowLeft"){elBack.click();}});
+  render();
+})();
+</script>
+</body>
+</html>

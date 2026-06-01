@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Call Stack – Schritt für Schritt</title>
+<style>
+  :root{
+    --bg-primary:#ffffff;
+    --bg-secondary:#f4f3ee;
+    --bg-info:#e6f1fb;
+    --text-primary:#1f1e1c;
+    --text-secondary:#5f5e5a;
+    --text-tertiary:#8a8881;
+    --text-info:#185fa5;
+    --border-tertiary:rgba(0,0,0,0.14);
+    --border-secondary:rgba(0,0,0,0.28);
+    --border-info:#378add;
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:ui-monospace,"Cascadia Code",Consolas,"Liberation Mono",monospace;
+    --r-md:8px;--r-lg:12px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg-primary:#262624;--bg-secondary:#30302d;--bg-info:#0c447c;
+      --text-primary:#f0efe9;--text-secondary:#b4b2a9;--text-tertiary:#888780;
+      --text-info:#85b7eb;--border-tertiary:rgba(255,255,255,0.16);
+      --border-secondary:rgba(255,255,255,0.3);--border-info:#378add;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg-primary);color:var(--text-primary);
+       font-family:var(--font-sans);line-height:1.6;
+       padding:24px;max-width:920px;margin:0 auto}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--text-secondary);font-size:14px;margin:0 0 20px}
+  button{font-family:inherit;font-size:14px;padding:6px 14px;cursor:pointer;
+         background:var(--bg-primary);color:var(--text-primary);
+         border:0.5px solid var(--border-secondary);border-radius:var(--r-md);
+         transition:background .12s,transform .06s}
+  button:hover:not(:disabled){background:var(--bg-secondary)}
+  button:active:not(:disabled){transform:scale(0.98)}
+  button:disabled{opacity:0.4;cursor:default}
+  .cs-row{display:flex;align-items:center;gap:6px;padding:3px 8px;
+          border-radius:var(--r-md);font-family:var(--font-mono);
+          font-size:13px;line-height:1.55}
+  .cs-num{width:22px;text-align:right;color:var(--text-tertiary);flex:none}
+  .cs-frame{border-radius:var(--r-lg);padding:9px 13px;margin-bottom:9px}
+  .cs-meta{font-family:var(--font-mono);font-size:12px;line-height:1.6}
+</style>
+</head>
+<body>
+  <h1>Call Stack – Schritt für Schritt</h1>
+  <p class="sub">main ruft compute, compute ruft square – danach werden die Frames in umgekehrter Reihenfolge wieder abgeräumt.</p>
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+    <button id="cs-back">&larr; Zur&uuml;ck</button>
+    <span id="cs-count" style="font-size:13px;color:var(--text-secondary);min-width:90px;text-align:center"></span>
+    <button id="cs-next">Weiter &rarr;</button>
+  </div>
+
+  <div id="cs-note" style="min-height:46px;font-size:14px;line-height:1.6;background:var(--bg-secondary);border-radius:var(--r-md);padding:10px 14px;margin-bottom:18px"></div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start">
+    <div style="flex:1 1 300px;min-width:0">
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Programm</div>
+      <div id="cs-code"></div>
+    </div>
+    <div style="flex:1 1 250px;min-width:0">
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Stack <span style="color:var(--text-secondary)">(oben = zuletzt aufgerufen)</span></div>
+      <div id="cs-stack"></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  var code=["int square(int n) {","    int result = n * n;","    return result;","}","","int compute(int x) {","    int y = square(x);","    return y + 1;","}","","int main() {","    int a = 5;","    int b = compute(a);","    return 0;","}"];
+  var M=function(l){return {fn:"main()",ret:"\u2192 Betriebssystem",args:[],locals:l};};
+  var steps=[
+    {line:11,note:"Programmstart: main() wird aufgerufen \u2013 sein Frame liegt als Erstes auf dem Stack.",
+      frames:[M(["int a = ?","int b = ?"])]},
+    {line:12,note:"main legt seine lokale Variable a = 5 an (im eigenen Frame).",
+      frames:[M(["int a = 5","int b = ?"])]},
+    {line:6,note:"main ruft compute(5) auf \u2192 ein neuer Frame wird OBEN aufgelegt: R\u00fccksprungadresse, Argument und Platz f\u00fcr die Locals.",
+      frames:[M(["int a = 5","int b = ?"]),{fn:"compute()",ret:"\u2192 main, Zeile 13",args:["int x = 5"],locals:["int y = ?"]}]},
+    {line:1,note:"compute ruft square(5) auf \u2192 wieder kommt ein Frame oben drauf. Der Stack ist jetzt 3 Frames hoch.",
+      frames:[M(["int a = 5","int b = ?"]),{fn:"compute()",ret:"\u2192 main, Zeile 13",args:["int x = 5"],locals:["int y = ?"]},{fn:"square()",ret:"\u2192 compute, Zeile 7",args:["int n = 5"],locals:["int result = ?"]}]},
+    {line:2,note:"square berechnet result = 5 * 5 = 25 \u2013 nur im obersten Frame sichtbar.",
+      frames:[M(["int a = 5","int b = ?"]),{fn:"compute()",ret:"\u2192 main, Zeile 13",args:["int x = 5"],locals:["int y = ?"]},{fn:"square()",ret:"\u2192 compute, Zeile 7",args:["int n = 5"],locals:["int result = 25"]}]},
+    {line:7,note:"square gibt 25 zur\u00fcck \u2192 sein Frame wird OBEN abger\u00e4umt (sp wandert nach unten). Der Wert flie\u00dft zur\u00fcck: y = 25.",
+      frames:[M(["int a = 5","int b = ?"]),{fn:"compute()",ret:"\u2192 main, Zeile 13",args:["int x = 5"],locals:["int y = 25"]}]},
+    {line:13,note:"compute rechnet y + 1 = 26 und gibt es zur\u00fcck \u2192 sein Frame wird abger\u00e4umt. main erh\u00e4lt b = 26.",
+      frames:[M(["int a = 5","int b = 26"])]},
+    {line:15,note:"main gibt 0 zur\u00fcck \u2192 auch sein Frame wird abger\u00e4umt. Der Stack ist leer \u2013 das Programm endet.",
+      frames:[]}
+  ];
+  var i=0;
+  var elCode=document.getElementById("cs-code"),elStack=document.getElementById("cs-stack"),elNote=document.getElementById("cs-note"),elCount=document.getElementById("cs-count"),elBack=document.getElementById("cs-back"),elNext=document.getElementById("cs-next");
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+  function render(){
+    var s=steps[i];
+    elNote.textContent=s.note;
+    elCount.textContent="Schritt "+(i+1)+" / "+steps.length;
+    elBack.disabled=(i===0);elNext.disabled=(i===steps.length-1);
+    var ch="";
+    for(var l=0;l<code.length;l++){
+      var cur=(l+1===s.line);
+      var bg=cur?"background:var(--bg-info);":"";
+      var col=cur?"color:var(--text-info);":"color:var(--text-primary);";
+      ch+='<div class="cs-row" style="'+bg+'"><span class="cs-num">'+(l+1)+'</span><span style="'+col+'white-space:pre">'+esc(code[l])+'</span></div>';
+    }
+    elCode.innerHTML=ch;
+    if(s.frames.length===0){
+      elStack.innerHTML='<div style="font-family:var(--font-mono);font-size:13px;color:var(--text-tertiary);border:1px dashed var(--border-secondary);border-radius:var(--r-lg);padding:14px;text-align:center">Stack leer</div>';
+      return;
+    }
+    var sh="";
+    for(var f=s.frames.length-1;f>=0;f--){
+      var fr=s.frames[f];
+      var top=(f===s.frames.length-1);
+      var style=top?"background:var(--bg-info);border:2px solid var(--border-info);":"background:var(--bg-secondary);border:0.5px solid var(--border-tertiary);";
+      var sp=top?'<span style="font-size:11px;color:var(--text-info)">&larr; sp (oben)</span>':"";
+      var body='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--text-primary)">'+fr.fn+'</span>'+sp+'</div>';
+      body+='<div class="cs-meta" style="color:var(--text-tertiary)">ret '+fr.ret+'</div>';
+      fr.args.forEach(function(a){body+='<div class="cs-meta" style="color:var(--text-secondary)">arg &nbsp;'+esc(a)+'</div>';});
+      fr.locals.forEach(function(a){body+='<div class="cs-meta" style="color:var(--text-secondary)">loc &nbsp;'+esc(a)+'</div>';});
+      sh+='<div class="cs-frame" style="'+style+'">'+body+'</div>';
+    }
+    elStack.innerHTML=sh;
+  }
+  elBack.onclick=function(){if(i>0){i--;render();}};
+  elNext.onclick=function(){if(i<steps.length-1){i++;render();}};
+  document.addEventListener("keydown",function(e){
+    if(e.key==="ArrowRight"){elNext.click();}
+    if(e.key==="ArrowLeft"){elBack.click();}
+  });
+  render();
+})();
+</script>
+</body>
+</html>

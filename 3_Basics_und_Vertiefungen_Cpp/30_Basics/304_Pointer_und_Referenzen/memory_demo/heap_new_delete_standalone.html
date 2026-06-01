@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heap – new / delete & Memory Leak</title>
+<style>
+  :root{
+    --bg-primary:#ffffff;--bg-secondary:#f4f3ee;--bg-info:#e6f1fb;--bg-danger:#fcebeb;
+    --text-primary:#1f1e1c;--text-secondary:#5f5e5a;--text-tertiary:#8a8881;
+    --text-info:#185fa5;--text-danger:#a32d2d;
+    --border-tertiary:rgba(0,0,0,0.14);--border-secondary:rgba(0,0,0,0.28);
+    --border-info:#378add;
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:ui-monospace,"Cascadia Code",Consolas,"Liberation Mono",monospace;
+    --r-md:8px;--r-lg:12px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg-primary:#262624;--bg-secondary:#30302d;--bg-info:#0c447c;--bg-danger:#501313;
+      --text-primary:#f0efe9;--text-secondary:#b4b2a9;--text-tertiary:#888780;
+      --text-info:#85b7eb;--text-danger:#f09595;
+      --border-tertiary:rgba(255,255,255,0.16);--border-secondary:rgba(255,255,255,0.3);
+      --border-info:#378add;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0 auto;max-width:920px;padding:24px;background:var(--bg-primary);
+       color:var(--text-primary);font-family:var(--font-sans);line-height:1.6}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--text-secondary);font-size:14px;margin:0 0 20px}
+  button{font-family:inherit;font-size:14px;padding:6px 14px;cursor:pointer;
+         background:var(--bg-primary);color:var(--text-primary);
+         border:0.5px solid var(--border-secondary);border-radius:var(--r-md);
+         transition:background .12s,transform .06s}
+  button:hover:not(:disabled){background:var(--bg-secondary)}
+  button:active:not(:disabled){transform:scale(0.98)}
+  button:disabled{opacity:0.4;cursor:default}
+  .hp-row{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:var(--r-md);
+          font-family:var(--font-mono);font-size:13px;line-height:1.55}
+  .hp-num{width:18px;text-align:right;color:var(--text-tertiary);flex:none}
+  .hp-card{border-radius:var(--r-lg);padding:9px 13px;margin-bottom:9px}
+  .hp-meta{font-family:var(--font-mono);font-size:12px;line-height:1.6}
+  .hp-badge{font-size:11px;padding:1px 8px;border-radius:var(--r-md)}
+</style>
+</head>
+<body>
+  <h1>Heap &ndash; new / delete &amp; Memory Leak</h1>
+  <p class="sub">Umschaltbar: korrekter Ablauf (mit delete) gegen einen Memory Leak (ohne delete).</p>
+
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    <button id="hp-ok">Korrekt (mit delete)</button>
+    <button id="hp-leak">Memory Leak (ohne delete)</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <button id="hp-back">&larr; Zur&uuml;ck</button>
+    <span id="hp-count" style="font-size:13px;color:var(--text-secondary);min-width:90px;text-align:center"></span>
+    <button id="hp-next">Weiter &rarr;</button>
+  </div>
+  <div id="hp-note" style="min-height:46px;font-size:14px;line-height:1.6;background:var(--bg-secondary);border-radius:var(--r-md);padding:10px 14px;margin-bottom:18px"></div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+    <div style="flex:1 1 230px;min-width:0">
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Programm</div>
+      <div id="hp-code"></div>
+    </div>
+    <div style="flex:1 1 150px;min-width:0">
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Stack</div>
+      <div id="hp-stack"></div>
+    </div>
+    <div style="flex:1 1 180px;min-width:0">
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Heap</div>
+      <div id="hp-heap"></div>
+    </div>
+  </div>
+  <div style="margin-top:16px;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary)">
+    <span><span class="hp-badge" style="background:var(--bg-info);color:var(--text-info)">belegt</span> reserviert &amp; erreichbar</span>
+    <span><span class="hp-badge" style="background:var(--bg-secondary);color:var(--text-tertiary)">freigegeben</span> zur&uuml;ckgegeben</span>
+    <span><span class="hp-badge" style="background:var(--bg-danger);color:var(--text-danger)">verwaist</span> Leak</span>
+  </div>
+
+<script>
+(function(){
+  var codeOk=["void store() {","    double* ptr = new double(7.0);","    useValue(*ptr);","    delete ptr;","    ptr = nullptr;","}"];
+  var codeLeak=["void store() {","    double* ptr = new double(7.0);","    useValue(*ptr);","}   // kein delete!"];
+  function blk(state){return {addr:"0x00a0",val:(state==="freigegeben"?"\u2014":"double = 7.0"),state:state};}
+  var seqOk=[
+    {line:1,note:"store() wird aufgerufen. Der Pointer ptr liegt auf dem Stack \u2013 noch ohne g\u00fcltige Adresse.",ptr:"(uninitialisiert)",dang:false,heap:[]},
+    {line:2,note:"new double(7.0): Auf dem HEAP wird Speicher reserviert und mit 7.0 belegt. Die Adresse landet in ptr (auf dem Stack).",ptr:"0x00a0",dang:false,heap:[blk("belegt")]},
+    {line:3,note:"*ptr liest den Wert auf dem Heap: 7.0. Der Pointer selbst bleibt unver\u00e4ndert.",ptr:"0x00a0",dang:false,heap:[blk("belegt")]},
+    {line:4,note:"delete ptr gibt den Heap-Speicher wieder frei. Achtung: ptr h\u00e4lt jetzt noch die alte Adresse \u2013 ein 'dangling pointer'.",ptr:"0x00a0",dang:true,heap:[blk("freigegeben")]},
+    {line:5,note:"ptr = nullptr: Der Pointer zeigt jetzt bewusst auf 'nichts'. Kein dangling pointer mehr.",ptr:"nullptr",dang:false,heap:[blk("freigegeben")]},
+    {line:6,note:"store() endet: Der Stack-Frame (und ptr) verschwindet. Der Heap ist leer \u2013 f\u00fcr jedes new gab es ein delete.",ptr:null,dang:false,heap:[]}
+  ];
+  var seqLeak=[
+    {line:1,note:"store() wird aufgerufen. Der Pointer ptr liegt auf dem Stack.",ptr:"(uninitialisiert)",dang:false,heap:[]},
+    {line:2,note:"new double(7.0): Heap-Speicher reserviert (7.0), die Adresse landet in ptr.",ptr:"0x00a0",dang:false,heap:[blk("belegt")]},
+    {line:3,note:"*ptr liest 7.0 vom Heap.",ptr:"0x00a0",dang:false,heap:[blk("belegt")]},
+    {line:4,note:"store() endet OHNE delete: Stack-Frame und ptr verschwinden \u2013 aber der Heap-Block bleibt reserviert. Niemand zeigt mehr darauf.",ptr:null,dang:false,heap:[blk("verwaist")]},
+    {line:0,note:"MEMORY LEAK: Der Speicher ist belegt, aber unerreichbar. Erst beim Programmende holt das OS ihn zur\u00fcck \u2013 in langlaufenden Programmen sammelt sich so immer mehr M\u00fcll an.",ptr:null,dang:false,heap:[blk("verwaist")]}
+  ];
+  var mode="ok",i=0;
+  var elCode=document.getElementById("hp-code"),elStack=document.getElementById("hp-stack"),elHeap=document.getElementById("hp-heap"),elNote=document.getElementById("hp-note"),elCount=document.getElementById("hp-count"),elBack=document.getElementById("hp-back"),elNext=document.getElementById("hp-next"),bOk=document.getElementById("hp-ok"),bLeak=document.getElementById("hp-leak");
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+  function seq(){return mode==="ok"?seqOk:seqLeak;}
+  function code(){return mode==="ok"?codeOk:codeLeak;}
+  function modeStyle(active){return active?"border:2px solid var(--border-info);background:var(--bg-info);color:var(--text-info);":"";}
+  function render(){
+    var s=seq()[i],cd=code();
+    bOk.setAttribute("style",modeStyle(mode==="ok"));
+    bLeak.setAttribute("style",modeStyle(mode==="leak"));
+    elNote.textContent=s.note;
+    elCount.textContent="Schritt "+(i+1)+" / "+seq().length;
+    elBack.disabled=(i===0);elNext.disabled=(i===seq().length-1);
+    var ch="";
+    for(var l=0;l<cd.length;l++){
+      var cur=(l+1===s.line);
+      var bg=cur?"background:var(--bg-info);":"";
+      var col=cur?"color:var(--text-info);":"color:var(--text-primary);";
+      ch+='<div class="hp-row" style="'+bg+'"><span class="hp-num">'+(l+1)+'</span><span style="'+col+'white-space:pre">'+esc(cd[l])+'</span></div>';
+    }
+    elCode.innerHTML=ch;
+    if(s.ptr===null){
+      elStack.innerHTML='<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);border:1px dashed var(--border-secondary);border-radius:var(--r-lg);padding:12px;text-align:center">Frame weg</div>';
+    }else{
+      var pv=s.dang?'<span style="color:var(--text-danger)">'+esc(s.ptr)+'</span>':esc(s.ptr);
+      var hint=(s.ptr.indexOf("0x")===0&&!s.dang)?'<div class="hp-meta" style="color:var(--text-info)">zeigt auf Heap \u2192</div>':'';
+      var warn=s.dang?'<div class="hp-meta" style="color:var(--text-danger)">\u26a0 zeigt auf freigegebenen Speicher</div>':'';
+      elStack.innerHTML='<div class="hp-card" style="background:var(--bg-secondary);border:0.5px solid var(--border-tertiary)"><div style="font-family:var(--font-mono);font-size:13px;font-weight:600;margin-bottom:4px">store()</div><div class="hp-meta" style="color:var(--text-secondary)">double* ptr = '+pv+'</div>'+hint+warn+'</div>';
+    }
+    if(s.heap.length===0){
+      elHeap.innerHTML='<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);border:1px dashed var(--border-secondary);border-radius:var(--r-lg);padding:12px;text-align:center">Heap leer</div>';
+    }else{
+      var hh="";
+      s.heap.forEach(function(b){
+        var bg,bd,bc;
+        if(b.state==="belegt"){bg="var(--bg-info)";bd="var(--border-info)";bc="var(--text-info)";}
+        else if(b.state==="verwaist"){bg="var(--bg-danger)";bd="var(--text-danger)";bc="var(--text-danger)";}
+        else{bg="var(--bg-secondary)";bd="var(--border-tertiary)";bc="var(--text-tertiary)";}
+        hh+='<div class="hp-card" style="background:'+bg+';border:'+(b.state==="belegt"?"2px":"0.5px")+' solid '+bd+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">'+b.addr+'</span><span class="hp-badge" style="color:'+bc+'">'+b.state+'</span></div><div class="hp-meta" style="color:var(--text-secondary)">'+esc(b.val)+'</div></div>';
+      });
+      elHeap.innerHTML=hh;
+    }
+  }
+  function setMode(m){mode=m;i=0;render();}
+  bOk.onclick=function(){setMode("ok");};
+  bLeak.onclick=function(){setMode("leak");};
+  elBack.onclick=function(){if(i>0){i--;render();}};
+  elNext.onclick=function(){if(i<seq().length-1){i++;render();}};
+  document.addEventListener("keydown",function(e){
+    if(e.key==="ArrowRight"){elNext.click();}
+    if(e.key==="ArrowLeft"){elBack.click();}
+  });
+  render();
+})();
+</script>
+</body>
+</html>

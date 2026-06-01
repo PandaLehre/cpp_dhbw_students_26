@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Pointer – std::unique_ptr & RAII</title>
+<style>
+  :root{
+    --bg-primary:#ffffff;--bg-secondary:#f4f3ee;--bg-info:#e6f1fb;--bg-success:#e1f5ee;
+    --text-primary:#1f1e1c;--text-secondary:#5f5e5a;--text-tertiary:#8a8881;
+    --text-info:#185fa5;--text-success:#0f6e56;
+    --border-tertiary:rgba(0,0,0,0.14);--border-secondary:rgba(0,0,0,0.28);
+    --border-info:#378add;
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:ui-monospace,"Cascadia Code",Consolas,"Liberation Mono",monospace;
+    --r-md:8px;--r-lg:12px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg-primary:#262624;--bg-secondary:#30302d;--bg-info:#0c447c;--bg-success:#085041;
+      --text-primary:#f0efe9;--text-secondary:#b4b2a9;--text-tertiary:#888780;
+      --text-info:#85b7eb;--text-success:#5dcaa5;
+      --border-tertiary:rgba(255,255,255,0.16);--border-secondary:rgba(255,255,255,0.3);
+      --border-info:#378add;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0 auto;max-width:920px;padding:24px;background:var(--bg-primary);
+       color:var(--text-primary);font-family:var(--font-sans);line-height:1.6}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--text-secondary);font-size:14px;margin:0 0 20px}
+  button{font-family:inherit;font-size:14px;padding:6px 14px;cursor:pointer;
+         background:var(--bg-primary);color:var(--text-primary);
+         border:0.5px solid var(--border-secondary);border-radius:var(--r-md);
+         transition:background .12s,transform .06s}
+  button:hover:not(:disabled){background:var(--bg-secondary)}
+  button:active:not(:disabled){transform:scale(0.98)}
+  button:disabled{opacity:0.4;cursor:default}
+  .sp-row{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:var(--r-md);
+          font-family:var(--font-mono);font-size:13px;line-height:1.55}
+  .sp-num{width:18px;text-align:right;color:var(--text-tertiary);flex:none}
+  .sp-card{border-radius:var(--r-lg);padding:9px 13px;margin-bottom:9px}
+  .sp-meta{font-family:var(--font-mono);font-size:12px;line-height:1.6}
+  .sp-badge{font-size:11px;padding:1px 8px;border-radius:var(--r-md)}
+</style>
+</head>
+<body>
+  <h1>Smart Pointer &ndash; std::unique_ptr &amp; RAII</h1>
+  <p class="sub">Der Smart Pointer verwaltet den Heap-Speicher selbst und gibt ihn beim Scope-Ende automatisch frei &ndash; ohne manuelles delete.</p>
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <button id="sp-back">&larr; Zur&uuml;ck</button>
+    <span id="sp-count" style="font-size:13px;color:var(--text-secondary);min-width:90px;text-align:center"></span>
+    <button id="sp-next">Weiter &rarr;</button>
+  </div>
+  <div id="sp-note" style="min-height:46px;font-size:14px;line-height:1.6;background:var(--bg-secondary);border-radius:var(--r-md);padding:10px 14px;margin-bottom:18px"></div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+    <div style="flex:1 1 230px;min-width:0">
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Programm</div>
+      <div id="sp-code"></div>
+    </div>
+    <div style="flex:1 1 170px;min-width:0">
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Stack</div>
+      <div id="sp-stack"></div>
+    </div>
+    <div style="flex:1 1 170px;min-width:0">
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Heap</div>
+      <div id="sp-heap"></div>
+    </div>
+  </div>
+  <div style="margin-top:16px;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary)">
+    <span><span class="sp-badge" style="background:var(--bg-info);color:var(--text-info)">belegt</span> reserviert &amp; erreichbar</span>
+    <span><span class="sp-badge" style="background:var(--bg-success);color:var(--text-success)">auto-frei</span> Destruktor hat freigegeben</span>
+  </div>
+
+<script>
+(function(){
+  var code=["void store() {","    auto ptr=std::make_unique<double>(7.0);","    useValue(*ptr);","}"];
+  var steps=[
+    {line:1,note:"store() wird aufgerufen. ptr ist ein std::unique_ptr-OBJEKT auf dem Stack \u2013 kein roher Pointer, sondern ein Besitzer, der seinen Heap-Speicher selbst verwaltet.",owns:"(leer)",auto:false,frame:true,heap:[]},
+    {line:2,note:"make_unique reserviert Heap-Speicher (7.0). ptr \u00fcbernimmt den Besitz und zeigt darauf.",owns:"0x00a0",auto:false,frame:true,heap:[{addr:"0x00a0",val:"double = 7.0",state:"belegt"}]},
+    {line:3,note:"*ptr greift wie ein gew\u00f6hnlicher Pointer auf den Wert zu: 7.0.",owns:"0x00a0",auto:false,frame:true,heap:[{addr:"0x00a0",val:"double = 7.0",state:"belegt"}]},
+    {line:4,note:"Scope-Ende: Automatisch wird der Destruktor von ptr aufgerufen \u2013 er gibt den Heap-Speicher von selbst frei. Kein manuelles delete n\u00f6tig!",owns:"0x00a0",auto:true,frame:true,heap:[{addr:"0x00a0",val:"\u2014",state:"auto"}]},
+    {line:0,note:"Der Stack-Frame ist weg, der Heap ist leer \u2013 ganz ohne manuelles delete. Das ist RAII: Aufr\u00e4umen ist an die Objektlebensdauer gekoppelt.",owns:null,auto:false,frame:false,heap:[]}
+  ];
+  var i=0;
+  var elCode=document.getElementById("sp-code"),elStack=document.getElementById("sp-stack"),elHeap=document.getElementById("sp-heap"),elNote=document.getElementById("sp-note"),elCount=document.getElementById("sp-count"),elBack=document.getElementById("sp-back"),elNext=document.getElementById("sp-next");
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+  function render(){
+    var s=steps[i];
+    elNote.textContent=s.note;
+    elCount.textContent="Schritt "+(i+1)+" / "+steps.length;
+    elBack.disabled=(i===0);elNext.disabled=(i===steps.length-1);
+    var ch="";
+    for(var l=0;l<code.length;l++){
+      var cur=(l+1===s.line);
+      var bg=cur?"background:var(--bg-info);":"";
+      var col=cur?"color:var(--text-info);":"color:var(--text-primary);";
+      ch+='<div class="sp-row" style="'+bg+'"><span class="sp-num">'+(l+1)+'</span><span style="'+col+'white-space:pre">'+esc(code[l])+'</span></div>';
+    }
+    elCode.innerHTML=ch;
+    if(!s.frame){
+      elStack.innerHTML='<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);border:1px dashed var(--border-secondary);border-radius:var(--r-lg);padding:12px;text-align:center">Frame weg</div>';
+    }else{
+      var ownsLine=(s.owns==="(leer)")
+        ?'<div class="sp-meta" style="color:var(--text-tertiary)">besitzt: (leer)</div>'
+        :'<div class="sp-meta" style="color:var(--text-info)">besitzt \u2192 '+esc(s.owns)+'</div>';
+      var autoLine=s.auto?'<div class="sp-meta" style="color:var(--text-success)">~unique_ptr() l\u00e4uft \u2192 gibt Heap frei</div>':'';
+      elStack.innerHTML='<div class="sp-card" style="background:var(--bg-secondary);border:0.5px solid var(--border-tertiary)"><div style="font-family:var(--font-mono);font-size:13px;font-weight:600;margin-bottom:4px">store()</div><div class="sp-meta" style="color:var(--text-secondary)">unique_ptr&lt;double&gt; ptr</div>'+ownsLine+autoLine+'</div>';
+    }
+    if(s.heap.length===0){
+      elHeap.innerHTML='<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);border:1px dashed var(--border-secondary);border-radius:var(--r-lg);padding:12px;text-align:center">Heap leer</div>';
+    }else{
+      var hh="";
+      s.heap.forEach(function(b){
+        var bg,bd,bc,lbl;
+        if(b.state==="belegt"){bg="var(--bg-info)";bd="var(--border-info)";bc="var(--text-info)";lbl="belegt";}
+        else{bg="var(--bg-success)";bd="var(--text-success)";bc="var(--text-success)";lbl="auto-frei";}
+        hh+='<div class="sp-card" style="background:'+bg+';border:'+(b.state==="belegt"?"2px":"0.5px")+' solid '+bd+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">'+b.addr+'</span><span class="sp-badge" style="color:'+bc+'">'+lbl+'</span></div><div class="sp-meta" style="color:var(--text-secondary)">'+esc(b.val)+'</div></div>';
+      });
+      elHeap.innerHTML=hh;
+    }
+  }
+  elBack.onclick=function(){if(i>0){i--;render();}};
+  elNext.onclick=function(){if(i<steps.length-1){i++;render();}};
+  document.addEventListener("keydown",function(e){
+    if(e.key==="ArrowRight"){elNext.click();}
+    if(e.key==="ArrowLeft"){elBack.click();}
+  });
+  render();
+})();
+</script>
+</body>
+</html>

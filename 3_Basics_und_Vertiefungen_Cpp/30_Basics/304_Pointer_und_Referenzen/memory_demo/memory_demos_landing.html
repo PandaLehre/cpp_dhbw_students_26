@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stack · Heap · Smart Pointer</title>
+<style>
+  :root{
+    --bg-primary:#ffffff;--bg-secondary:#f4f3ee;--bg-info:#e6f1fb;--bg-danger:#fcebeb;--bg-success:#e1f5ee;
+    --text-primary:#1f1e1c;--text-secondary:#5f5e5a;--text-tertiary:#8a8881;
+    --text-info:#185fa5;--text-danger:#a32d2d;--text-success:#0f6e56;
+    --border-tertiary:rgba(0,0,0,0.14);--border-secondary:rgba(0,0,0,0.28);--border-info:#378add;
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:ui-monospace,"Cascadia Code",Consolas,"Liberation Mono",monospace;
+    --r-md:8px;--r-lg:12px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg-primary:#262624;--bg-secondary:#30302d;--bg-info:#0c447c;--bg-danger:#501313;--bg-success:#085041;
+      --text-primary:#f0efe9;--text-secondary:#b4b2a9;--text-tertiary:#888780;
+      --text-info:#85b7eb;--text-danger:#f09595;--text-success:#5dcaa5;
+      --border-tertiary:rgba(255,255,255,0.16);--border-secondary:rgba(255,255,255,0.3);--border-info:#378add;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0 auto;max-width:960px;padding:24px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-sans);line-height:1.6}
+  h1{font-size:21px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--text-secondary);font-size:14px;margin:0 0 18px}
+  button{font-family:inherit;font-size:14px;padding:6px 14px;cursor:pointer;background:var(--bg-primary);color:var(--text-primary);border:0.5px solid var(--border-secondary);border-radius:var(--r-md);transition:background .12s,transform .06s}
+  button:hover:not(:disabled){background:var(--bg-secondary)}
+  button:active:not(:disabled){transform:scale(0.98)}
+  button:disabled{opacity:0.4;cursor:default}
+  .seg{font-size:14px;padding:8px 16px}
+  .sub-toggle{font-size:13px;padding:4px 12px}
+  .row{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:var(--r-md);font-family:var(--font-mono);font-size:13px;line-height:1.55}
+  .num{width:18px;text-align:right;color:var(--text-tertiary);flex:none}
+  .card{border-radius:var(--r-lg);padding:9px 13px;margin-bottom:9px}
+  .meta{font-family:var(--font-mono);font-size:12px;line-height:1.6}
+  .badge{font-size:11px;padding:1px 8px;border-radius:var(--r-md)}
+</style>
+</head>
+<body>
+  <h1>Stack · Heap · Smart Pointer</h1>
+  <p class="sub">Derselbe Wert (double = 7.0), drei Verwaltungsstrategien. &nbsp;<span style="color:var(--text-tertiary)">(Tasten: &larr; / &rarr; Schritte, 1 / 2 / 3 Segmente)</span></p>
+
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button class="seg" id="seg-stack">1 &middot; Stack</button>
+    <button class="seg" id="seg-heap">2 &middot; Heap (new/delete)</button>
+    <button class="seg" id="seg-smart">3 &middot; Smart Pointer</button>
+  </div>
+
+  <div id="heap-sub" style="display:none;gap:8px;margin-bottom:12px">
+    <span style="font-size:12px;color:var(--text-tertiary);align-self:center">Variante:</span>
+    <button class="sub-toggle" id="sub-ok">Korrekt (mit delete)</button>
+    <button class="sub-toggle" id="sub-leak">Memory Leak (ohne delete)</button>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <button id="back">&larr; Zur&uuml;ck</button>
+    <span id="count" style="font-size:13px;color:var(--text-secondary);min-width:90px;text-align:center"></span>
+    <button id="next">Weiter &rarr;</button>
+  </div>
+  <div id="note" style="min-height:46px;font-size:14px;line-height:1.6;background:var(--bg-secondary);border-radius:var(--r-md);padding:10px 14px;margin-bottom:18px"></div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+    <div style="flex:1 1 250px;min-width:0"><div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Programm</div><div id="code"></div></div>
+    <div style="flex:1 1 180px;min-width:0"><div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Stack</div><div id="stack"></div></div>
+    <div style="flex:1 1 180px;min-width:0"><div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">Heap</div><div id="heap"></div></div>
+  </div>
+  <div style="margin-top:16px;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary)">
+    <span><span class="badge" style="background:var(--bg-info);color:var(--text-info)">belegt</span> reserviert &amp; erreichbar</span>
+    <span><span class="badge" style="background:var(--bg-secondary);color:var(--text-tertiary)">freigegeben</span> zur&uuml;ckgegeben</span>
+    <span><span class="badge" style="background:var(--bg-danger);color:var(--text-danger)">verwaist</span> Leak</span>
+    <span><span class="badge" style="background:var(--bg-success);color:var(--text-success)">auto-frei</span> Destruktor</span>
+  </div>
+
+<script>
+(function(){
+  function L(t,c){return {t:t,c:c||"sec"};}
+  function blk(s){var v=(s==="freigegeben"||s==="auto")?"\u2014":"double = 7.0";return {addr:"0x00a0",val:v,state:s};}
+  var data={
+    stack:{code:["void store() {","  double x = 7.0;","  useValue(x);","}"],steps:[
+      {line:1,note:"store() wird aufgerufen. Der Stack-Frame entsteht \u2013 x ist noch nicht angelegt.",stack:{title:"store()",lines:[L("double x = (noch nicht da)","ter")]},heap:[]},
+      {line:2,note:"double x = 7.0: Die Variable liegt direkt im Stack-Frame. Kein new \u2013 der Heap bleibt unber\u00fchrt.",stack:{title:"store()",lines:[L("double x = 7.0")]},heap:[]},
+      {line:3,note:"useValue(x) liest x = 7.0 direkt aus dem Frame.",stack:{title:"store()",lines:[L("double x = 7.0")]},heap:[]},
+      {line:4,note:"Scope-Ende: Der Compiler r\u00e4umt den Frame (mit x) automatisch ab. Kein delete n\u00f6tig.",stack:{title:"store()",lines:[L("double x = 7.0"),L("\u2190 Frame wird abger\u00e4umt","success")]},heap:[]},
+      {line:0,note:"Frame weg, Stack und Heap leer. Stack-Variablen verschwinden automatisch mit ihrem Frame.",stack:null,heap:[]}
+    ]},
+    heapOk:{code:["void store() {","  double* ptr = new double(7.0);","  useValue(*ptr);","  delete ptr;","  ptr = nullptr;","}"],steps:[
+      {line:1,note:"store() wird aufgerufen. Der Pointer ptr liegt auf dem Stack \u2013 noch ohne g\u00fcltige Adresse.",stack:{title:"store()",lines:[L("double* ptr = (uninitialisiert)","ter")]},heap:[]},
+      {line:2,note:"new double(7.0): Auf dem HEAP wird Speicher reserviert (7.0). Die Adresse landet in ptr.",stack:{title:"store()",lines:[L("double* ptr = 0x00a0"),L("zeigt auf Heap \u2192","info")]},heap:[blk("belegt")]},
+      {line:3,note:"*ptr liest den Wert auf dem Heap: 7.0.",stack:{title:"store()",lines:[L("double* ptr = 0x00a0"),L("zeigt auf Heap \u2192","info")]},heap:[blk("belegt")]},
+      {line:4,note:"delete ptr gibt den Heap-Speicher frei. ptr h\u00e4lt aber noch die alte Adresse \u2013 dangling pointer.",stack:{title:"store()",lines:[L("double* ptr = 0x00a0","danger"),L("\u26a0 zeigt auf freigegebenen Speicher","danger")]},heap:[blk("freigegeben")]},
+      {line:5,note:"ptr = nullptr: Der Pointer zeigt bewusst auf nichts. Kein dangling pointer mehr.",stack:{title:"store()",lines:[L("double* ptr = nullptr")]},heap:[blk("freigegeben")]},
+      {line:6,note:"store() endet: Frame und ptr verschwinden. Der Heap ist leer \u2013 f\u00fcr jedes new gab es ein delete.",stack:null,heap:[]}
+    ]},
+    heapLeak:{code:["void store() {","  double* ptr = new double(7.0);","  useValue(*ptr);","}   // kein delete!"],steps:[
+      {line:1,note:"store() wird aufgerufen. ptr liegt auf dem Stack.",stack:{title:"store()",lines:[L("double* ptr = (uninitialisiert)","ter")]},heap:[]},
+      {line:2,note:"new double(7.0): Heap reserviert (7.0), die Adresse landet in ptr.",stack:{title:"store()",lines:[L("double* ptr = 0x00a0"),L("zeigt auf Heap \u2192","info")]},heap:[blk("belegt")]},
+      {line:3,note:"*ptr liest 7.0 vom Heap.",stack:{title:"store()",lines:[L("double* ptr = 0x00a0"),L("zeigt auf Heap \u2192","info")]},heap:[blk("belegt")]},
+      {line:4,note:"store() endet OHNE delete: Frame und ptr verschwinden \u2013 aber der Heap-Block bleibt. Niemand zeigt mehr darauf.",stack:null,heap:[blk("verwaist")]},
+      {line:0,note:"MEMORY LEAK: belegt, aber unerreichbar. Erst beim Programmende holt das OS ihn zur\u00fcck \u2013 in langlaufenden Programmen sammelt sich so der M\u00fcll an.",stack:null,heap:[blk("verwaist")]}
+    ]},
+    smart:{code:["void store() {","  auto ptr = std::make_unique<double>(7.0);","  useValue(*ptr);","}"],steps:[
+      {line:1,note:"store() wird aufgerufen. ptr ist ein unique_ptr-OBJEKT auf dem Stack \u2013 ein Besitzer, der seinen Heap-Speicher selbst verwaltet.",stack:{title:"store()",lines:[L("unique_ptr<double> ptr"),L("besitzt: (leer)","ter")]},heap:[]},
+      {line:2,note:"make_unique reserviert Heap (7.0). ptr \u00fcbernimmt den Besitz.",stack:{title:"store()",lines:[L("unique_ptr<double> ptr"),L("besitzt \u2192 0x00a0","info")]},heap:[blk("belegt")]},
+      {line:3,note:"*ptr greift wie ein normaler Pointer auf den Wert zu: 7.0.",stack:{title:"store()",lines:[L("unique_ptr<double> ptr"),L("besitzt \u2192 0x00a0","info")]},heap:[blk("belegt")]},
+      {line:4,note:"Scope-Ende: Automatisch l\u00e4uft ~unique_ptr() und gibt den Heap frei. Kein manuelles delete!",stack:{title:"store()",lines:[L("unique_ptr<double> ptr"),L("~unique_ptr() l\u00e4uft \u2192 gibt Heap frei","success")]},heap:[blk("auto")]},
+      {line:0,note:"Frame weg, Heap leer \u2013 ganz ohne manuelles delete. Das ist RAII: Aufr\u00e4umen ist an die Objektlebensdauer gekoppelt.",stack:null,heap:[]}
+    ]}
+  };
+  var seg="stack",heapMode="ok",i=0;
+  var elCode=document.getElementById("code"),elStack=document.getElementById("stack"),elHeap=document.getElementById("heap"),elNote=document.getElementById("note"),elCount=document.getElementById("count"),elBack=document.getElementById("back"),elNext=document.getElementById("next"),elHeapSub=document.getElementById("heap-sub");
+  var segBtns={stack:document.getElementById("seg-stack"),heap:document.getElementById("seg-heap"),smart:document.getElementById("seg-smart")};
+  var subOk=document.getElementById("sub-ok"),subLeak=document.getElementById("sub-leak");
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+  function col(c){return c==="ter"?"var(--text-tertiary)":c==="info"?"var(--text-info)":c==="danger"?"var(--text-danger)":c==="success"?"var(--text-success)":"var(--text-secondary)";}
+  function current(){return seg==="heap"?(heapMode==="ok"?data.heapOk:data.heapLeak):data[seg];}
+  function activeStyle(on){return on?"border:2px solid var(--border-info);background:var(--bg-info);color:var(--text-info);":"";}
+  function render(){
+    var d=current(),s=d.steps[i],code=d.code;
+    for(var k in segBtns){segBtns[k].setAttribute("style",activeStyle(seg===k)+"font-size:14px;padding:8px 16px");}
+    elHeapSub.style.display=(seg==="heap")?"flex":"none";
+    subOk.setAttribute("style",activeStyle(heapMode==="ok")+"font-size:13px;padding:4px 12px");
+    subLeak.setAttribute("style",activeStyle(heapMode==="leak")+"font-size:13px;padding:4px 12px");
+    elNote.textContent=s.note;
+    elCount.textContent="Schritt "+(i+1)+" / "+d.steps.length;
+    elBack.disabled=(i===0);elNext.disabled=(i===d.steps.length-1);
+    var ch="";
+    for(var l=0;l<code.length;l++){
+      var cur=(l+1===s.line);
+      ch+='<div class="row" style="'+(cur?"background:var(--bg-info);":"")+'"><span class="num">'+(l+1)+'</span><span style="'+(cur?"color:var(--text-info);":"color:var(--text-primary);")+'white-space:pre">'+esc(code[l])+'</span></div>';
+    }
+    elCode.innerHTML=ch;
+    if(!s.stack){
+      elStack.innerHTML='<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);border:1px dashed var(--border-secondary);border-radius:var(--r-lg);padding:12px;text-align:center">Frame weg</div>';
+    }else{
+      var lines="";
+      s.stack.lines.forEach(function(ln){lines+='<div class="meta" style="color:'+col(ln.c)+'">'+esc(ln.t)+'</div>';});
+      elStack.innerHTML='<div class="card" style="background:var(--bg-secondary);border:0.5px solid var(--border-tertiary)"><div style="font-family:var(--font-mono);font-size:13px;font-weight:600;margin-bottom:4px">'+s.stack.title+'</div>'+lines+'</div>';
+    }
+    if(s.heap.length===0){
+      elHeap.innerHTML='<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);border:1px dashed var(--border-secondary);border-radius:var(--r-lg);padding:12px;text-align:center">Heap leer</div>';
+    }else{
+      var hh="";
+      s.heap.forEach(function(b){
+        var bg,bd,bc,lbl;
+        if(b.state==="belegt"){bg="var(--bg-info)";bd="var(--border-info)";bc="var(--text-info)";lbl="belegt";}
+        else if(b.state==="verwaist"){bg="var(--bg-danger)";bd="var(--text-danger)";bc="var(--text-danger)";lbl="verwaist";}
+        else if(b.state==="auto"){bg="var(--bg-success)";bd="var(--text-success)";bc="var(--text-success)";lbl="auto-frei";}
+        else{bg="var(--bg-secondary)";bd="var(--border-tertiary)";bc="var(--text-tertiary)";lbl="freigegeben";}
+        hh+='<div class="card" style="background:'+bg+';border:'+(b.state==="belegt"?"2px":"0.5px")+' solid '+bd+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">'+b.addr+'</span><span class="badge" style="color:'+bc+'">'+lbl+'</span></div><div class="meta" style="color:var(--text-secondary)">'+esc(b.val)+'</div></div>';
+      });
+      elHeap.innerHTML=hh;
+    }
+  }
+  function setSeg(x){seg=x;i=0;render();}
+  function setHeapMode(m){heapMode=m;i=0;render();}
+  segBtns.stack.onclick=function(){setSeg("stack");};
+  segBtns.heap.onclick=function(){setSeg("heap");};
+  segBtns.smart.onclick=function(){setSeg("smart");};
+  subOk.onclick=function(){setHeapMode("ok");};
+  subLeak.onclick=function(){setHeapMode("leak");};
+  elBack.onclick=function(){if(i>0){i--;render();}};
+  elNext.onclick=function(){if(i<current().steps.length-1){i++;render();}};
+  document.addEventListener("keydown",function(e){
+    if(e.key==="ArrowRight"){elNext.click();}
+    else if(e.key==="ArrowLeft"){elBack.click();}
+    else if(e.key==="1"){setSeg("stack");}
+    else if(e.key==="2"){setSeg("heap");}
+    else if(e.key==="3"){setSeg("smart");}
+  });
+  render();
+})();
+</script>
+</body>
+</html>
